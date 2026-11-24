@@ -57,8 +57,8 @@ class Call:
 
 
 class Client:
-    def __init__(self, key: str | None = None, cache: str | Path | None = None):
-        self._key, self._groq = key, None
+    def __init__(self, key: str | None = None, cache: str | Path | None = None, retries: int = 6):
+        self._key, self._groq, self._retries = key, None, retries
         self.cache_path = Path(cache) if cache else None
         self.cache: dict[str, dict] = {}
         if self.cache_path and self.cache_path.exists():
@@ -72,7 +72,7 @@ class Client:
         if self._groq is None:
             from groq import Groq
 
-            self._groq = Groq(api_key=self._key or api_key(), max_retries=6)
+            self._groq = Groq(api_key=self._key or api_key(), max_retries=self._retries)
         return self._groq
 
     def _hash(self, **parts) -> str:

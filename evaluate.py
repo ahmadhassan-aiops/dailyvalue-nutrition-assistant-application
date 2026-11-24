@@ -2,11 +2,12 @@
 
     python evaluate.py --retrieval              # search only: BM25, embeddings, hybrid (free, no key)
     python evaluate.py --collect MODEL          # answer every question with MODEL (fills data/cache/)
+    python evaluate.py --timing                 # answer time per model, fresh paced requests -> data/timing.json
     python evaluate.py --judge MODEL            # check MODEL's answers against their sources (gpt-oss-20b judges)
     python evaluate.py                          # score everything already collected -> data/summary.json
 
 Every call is cached in data/cache/<model>.jsonl, so scoring replays for free. Once Groq's daily token limit is
-reached the remaining questions are left unanswered (and reported as such) and can be completed another day.
+reached the remaining questions are left unanswered (per-minute limits are waited out) (and reported as such) and can be completed another day.
 """
 
 from __future__ import annotations
@@ -52,6 +53,26 @@ class Shared(Client):
         return self.clients[model].complete(model, *a, **kw)
 
 
+def patiently(fn):
+    """Calls fn, waiting out Groq's per-minute limits (the safety screen allows only 2,000 tokens a minute on the free
+    tier). Re-raises only the daily limit, or a per-minute limit that persists for several minutes. Retries are cheap:
+    every finished call is cached."""
+    import re
+    import time
+
+    from groq import RateLimitError
+
+    for attempt in range(12):
+        try:
+            return fn()
+        except RateLimitError as err:
+            msg = str(err)
+            if "per day" in msg or attempt == 11:
+                raise
+            wait = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", msg)
+            time.sleep(min(90.0, (int(wait.group(1) or 0) * 60 + float(wait.group(2)) if wait else 20.0) + 1.0))
+
+
 def hits(urls: list[str], expected: str) -> list[int]:
     exp = [e for e in expected.split(";") if e]
     return [i for i, u in enumerate(urls) if any(e in u for e in exp)]
@@ -92,11 +113,13 @@ def collect(model: str, r: Retriever) -> list[dict]:
             rows.append({"qid": qid, "kind": kind, "answered": False})
             continue
         try:
-            history = []
-            for first in before:      # the first turn of a follow-up pair, answered the same way
-                t0 = pipeline.run(client, r, first, model)
-                history.append((first, t0.text))
-            t = pipeline.run(client, r, question, model, history=history)
+            def ask(question=question, before=before):
+                history = []
+                for first in before:      # the first turn of a follow-up pair, answered the same way
+                    t0 = pipeline.run(client, r, first, model)
+                    history.append((first, t0.text))
+                return pipeline.run(client, r, question, model, history=history)
+            t = patiently(ask)
         except RateLimitError:
             limited = True
             rows.append({"qid": qid, "kind": kind, "answered": False})
@@ -110,6 +133,36 @@ def collect(model: str, r: Retriever) -> list[dict]:
                      "text": t.text, "problems": t.problems, "error": t.error, "tokens": t.tokens,
                      "seconds": t.seconds})
     return rows
+
+
+class Fresh(Shared):
+    """Like Shared, but the answer model is called afresh with no automatic retries, so the recorded time is one
+    request (the evaluation's own timings include waits for Groq's per-minute limits)."""
+
+    def __init__(self, model: str):
+        super().__init__()
+        self.model, self.fresh = model, Client(retries=0)
+
+    def complete(self, model, *a, **kw):
+        return self.fresh.complete(model, *a, **kw) if model == self.model else super().complete(model, *a, **kw)
+
+
+def timing(models: list[str], r: Retriever, n: int = 10) -> dict:
+    """Answer time per model on the first n answerable questions, one request at a time, 20 s apart."""
+    import time
+
+    q = questions()
+    q = q[q.kind == "answer"].head(n)
+    out = {}
+    for m in models:
+        client, secs = Fresh(m), []
+        for row in q.itertuples():
+            t = patiently(lambda question=row.question: pipeline.run(client, r, question, m))
+            secs.append(t.seconds)
+            time.sleep(20)
+        out[m] = {"n": len(secs), "median_seconds": round(statistics.median(secs), 2), "max_seconds": round(max(secs), 2)}
+        print(m, out[m])
+    return out
 
 
 def judge_rows(rows: list[dict], r: Retriever) -> list[dict]:
@@ -127,7 +180,7 @@ def judge_rows(rows: list[dict], r: Retriever) -> list[dict]:
         turn = pipeline.Turn(row["question"], text=row["text"],
                              passages=[by_url[(u, t)] for u, t in zip(row["urls"], row["texts"])])
         try:
-            j = pipeline.judge(client, JUDGE_MODEL, turn)
+            j = patiently(lambda turn=turn: pipeline.judge(client, JUDGE_MODEL, turn))
         except RateLimitError:
             break
         if j:
@@ -172,7 +225,7 @@ def choose(models: dict[str, dict]) -> str:
     declined, then the fastest."""
     return max(models, key=lambda m: (models[m]["judge"]["fully_supported"] or 0, models[m]["safety"]["label_right"] or 0,
                                       models[m]["answerable"]["covered"] or 0, models[m]["out_of_scope"]["declined"] or 0,
-                                      -models[m]["median_seconds"]))
+                                      -models[m].get("answer_seconds", models[m])["median_seconds"]))
 
 
 def main() -> None:
@@ -180,8 +233,12 @@ def main() -> None:
     ap.add_argument("--retrieval", action="store_true")
     ap.add_argument("--collect")
     ap.add_argument("--judge")
+    ap.add_argument("--timing", action="store_true")
     args = ap.parse_args()
     r = Retriever()
+    if args.timing:
+        (DATA / "timing.json").write_text(json.dumps(timing(pipeline.ANSWER_MODELS, r), indent=1), encoding="utf-8")
+        return
     if args.retrieval:
         print(json.dumps(retrieval(r), indent=1))
         return
@@ -195,6 +252,9 @@ def main() -> None:
         (DATA / "runs" / f"{m.replace('/', '_')}.json").write_text(json.dumps(rows, indent=1, ensure_ascii=False),
                                                                     encoding="utf-8")
         summary["models"][m] = score(rows)
+        timed = json.loads((DATA / "timing.json").read_text(encoding="utf-8")) if (DATA / "timing.json").exists() else {}
+        if m in timed:
+            summary["models"][m]["answer_seconds"] = timed[m]
         print(m, json.dumps(summary["models"][m], indent=1))
     if not (args.collect or args.judge):
         complete = {m: v for m, v in summary["models"].items()

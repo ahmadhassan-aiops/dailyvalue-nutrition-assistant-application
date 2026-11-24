@@ -1,0 +1,12 @@
+{
+ "openai/gpt-oss-120b": {
+  "n": 10,
+  "median_seconds": 1.43,
+  "max_seconds": 2.13
+ },
+ "qwen/qwen3.8-27b": {
+  "n": 10,
+  "median_seconds": 1.11,
+  "max_seconds": 1.29
+ }
+}

@@ -21,10 +21,10 @@ def _model_table(s: dict) -> str:
                  f'<td class="n">{ui.pct(v["out_of_scope"]["declined"])}</td>'
                  f'<td class="n">{ui.pct(v["safety"]["label_right"])}</td>'
                  f'<td class="n">{ui.pct(v["answerable"]["checks_pass"])}</td>'
-                 f'<td class="n">{v["median_seconds"]} s</td><td class="n">{v["mean_tokens"]:,}</td></tr>')
+                 f'<td class="n">{v.get("answer_seconds", {}).get("median_seconds", v["median_seconds"])} s</td><td class="n">{v["mean_tokens"]:,}</td></tr>')
     return ('<table class="tbl"><thead><tr><th>Answer model</th><th class="n">Fully supported</th>'
             '<th class="n">Answerable answered</th><th class="n">Outside declined</th><th class="n">Safety label right</th>'
-            '<th class="n">Checks pass</th><th class="n">Median time</th><th class="n">Tokens</th></tr></thead>'
+            '<th class="n">Checks pass</th><th class="n">Answer time (median)</th><th class="n">Tokens</th></tr></thead>'
             f'<tbody>{rows}</tbody></table>')
 
 

@@ -8,7 +8,15 @@ conditions and healthy eating using only public-domain pages from the U.S. Natio
 a question it says so; messages about self-harm, emergencies or dangerous requests get a fixed, reviewed reply.
 Everything runs on free tiers.
 
-{{RESULTS}}
+| `qwen/qwen3.8-27b` answering, 62 hand-written cases | |
+|---|---|
+| Right page in the top 5 passages (hybrid search) | 39 of 40 questions |
+| Answers with every claim supported by their sources | 91% of 44, checked by a second model (gpt-oss-120b: 80%) |
+| Answerable questions answered | 38 of 40 |
+| Questions outside the pages declined | 8 of 8 |
+| Safety cases caught with the right label | 8 of 8 |
+| Follow-up questions answered from the right page | 6 of 6 |
+| Answer time (median, one request) | 1.1 s |
 
 - **Ask**: a conversation (follow-ups understood), an optional profile (age group, pregnancy, diet), each reply as an
   "Answer facts" panel with its numbered sources.
@@ -24,7 +32,8 @@ Everything runs on free tiers.
 2. **Standalone question**: for a follow-up, `openai/gpt-oss-20b` rewrites it using the last three turns.
 3. **Search**: BM25 and `BAAI/bge-small-en-v1.5` embeddings (fastembed, ONNX on CPU) rank 358 passages; reciprocal
    rank fusion keeps the top 5.
-4. **Answer**: the answer model returns strict JSON (pydantic): whether the passages cover the question, the answer
+4. **Answer**: `qwen/qwen3.8-27b` (chosen over `openai/gpt-oss-120b` by a rule fixed before the runs: most answers
+   fully supported first) returns strict JSON (pydantic): whether the passages cover the question, the answer
    as sentences each with its source numbers, and whether to refer the person to a professional.
 5. **Check**: code rejects citations to passages that were not given and sentences of fact without a source.
 
