@@ -1,6 +1,6 @@
 # DailyValue: nutrition answers from NIH pages, every sentence sourced
 
-**Live app:** [dailyvalue-nutrition-assistant-application.streamlit.app](https://dailyvalue-nutrition-assistant-application.streamlit.app/) · **Notebook and project folder:** [AIOPS-Portfolio-Projects](https://github.com/ahmadhassan-aiops/AIOPS-Portfolio-Projects/tree/main/6.%20Gen%20AI%20Projects/GEN%20AI%20(Nutritional%20Bot))
+**Live app:** [dailyvalue-nutrition-assistant.streamlit.app](https://dailyvalue-nutrition-assistant.streamlit.app/) · **Notebook and project folder:** [AIOPS-Portfolio-Projects](https://github.com/ahmadhassan-aiops/AIOPS-Portfolio-Projects/tree/main/6.%20Gen%20AI%20Projects/GEN%20AI%20(Nutritional%20Bot))
 
 DailyValue, by **Ahmad Hassan** (AI Engineer), answers questions about vitamins, minerals, anemia, weight, digestive
 conditions and healthy eating using only public-domain pages from the U.S. National Institutes of Health
